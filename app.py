@@ -399,10 +399,14 @@ def detect_explicit_product(text: str, df, last_rank_list):
     return None
 
 def find_product_by_sku_number(text: str, df):
-    m = SKU_RE.search((text or "").lower())
+    t = (text or "").lower()
+    m = SKU_RE.search(t)
     if not m:
         return None
     sku_num = m.group(0)
+    # Require explicit cue (sku/codigo/3m) or at least 4 digits to avoid qty confusion
+    if not EXPLICIT_RE.search(t) and len(sku_num) <= 3:
+        return None
     # exact/contains match on SKU column
     matches = df[df["sku"].str.contains(sku_num, case=False, na=False)]
     if not matches.empty:
