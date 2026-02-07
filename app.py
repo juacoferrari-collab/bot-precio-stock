@@ -1010,6 +1010,15 @@ if user_text:
                 idx = rank_choice - 1
                 if 0 <= idx < len(st.session_state.last_rank_list):
                     chosen = st.session_state.last_rank_list[idx]
+                    if not qty:
+                        m = NUMBER_RE.search((user_text or "").lower())
+                        if m:
+                            try:
+                                n = int(m.group(1))
+                                if 1 <= n <= 10000:
+                                    qty = n
+                            except Exception:
+                                qty = None
                     if qty:
                         final_qty, stock = resolve_qty_with_stock(chosen, qty)
                         if stock and final_qty < qty:
