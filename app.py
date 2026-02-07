@@ -45,7 +45,7 @@ ABOUT_RE = re.compile(
     re.I
 )
 ABUSE_RE = re.compile(r"\b(puta|puto|mierda|forro|bolud[oa]|pelotud[oa]|idiota|imb[eé]cil|est[uú]pid[oa]|hdp|la concha)\b", re.I)
-CONFIRM_RE = re.compile(r"\b(confirmo|confirmar|confirmar compra|si, confirmo|ok confirmo|confirmar pedido)\b", re.I)
+CONFIRM_RE = re.compile(r"\b(confirmo|confirmar|confirmar compra|si, confirmo|ok confirmo|confirmar pedido|confirmado|listo confirmo|dale confirmo)\b", re.I)
 CANCEL_RE = re.compile(r"\b(cancelar|anular|no quiero|no gracias|dej[aá]lo|olvidalo)\b", re.I)
 QTY_CUE_RE = re.compile(r"\b(cantidad|unidades|uds|u\.|por|x)\b", re.I)
 SKU_RE = re.compile(r"\b\d{3,6}\b")
