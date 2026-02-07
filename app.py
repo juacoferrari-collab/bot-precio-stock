@@ -278,7 +278,33 @@ def _get_orders_ws():
         json.loads(GCP_SA_JSON),
         scopes=["https://www.googleapis.com/auth/spreadsheets"]
     )
-    return gspread.authorize(creds).open_by_key(GSHEET_ID).worksheet(ORDERS_TAB)
+    sh = gspread.authorize(creds).open_by_key(GSHEET_ID)
+    try:
+        return sh.worksheet(ORDERS_TAB)
+    except Exception:
+        # create orders tab if missing
+        ws = sh.add_worksheet(title=ORDERS_TAB, rows=1000, cols=20)
+        try:
+            ws.append_row(ORDERS_HEADER)
+        except Exception:
+            pass
+        return ws
+
+def _get_products_ws():
+    if not (GSHEET_ID and GCP_SA_JSON):
+        return None
+    import gspread
+    from google.oauth2.service_account import Credentials
+
+    creds = Credentials.from_service_account_info(
+        json.loads(GCP_SA_JSON),
+        scopes=["https://www.googleapis.com/auth/spreadsheets"]
+    )
+    sh = gspread.authorize(creds).open_by_key(GSHEET_ID)
+    try:
+        return sh.worksheet(GSHEET_TAB)
+    except Exception:
+        return sh.worksheet("Hoja 1")
 
 def _ensure_orders_header(ws):
     values = ws.get_all_values()
@@ -351,6 +377,40 @@ def update_order_status(row_index, status):
     _ensure_orders_header(ws)
     status_col = ORDERS_HEADER.index("status") + 1
     ws.update_cell(row_index, status_col, status)
+
+def decrement_stock_by_sku(sku, qty):
+    ws = _get_products_ws()
+    if not ws:
+        return
+    values = ws.get_all_values()
+    if not values:
+        return
+    header = [h.strip().lower() for h in values[0]]
+    try:
+        sku_idx = header.index("sku")
+        stock_idx = header.index("stock")
+    except ValueError:
+        return
+    # find row by SKU
+    for i, row in enumerate(values[1:], start=2):
+        if sku_idx < len(row) and row[sku_idx].strip().lower() == str(sku).strip().lower():
+            try:
+                current = int(float(row[stock_idx])) if stock_idx < len(row) and row[stock_idx] != "" else 0
+            except Exception:
+                current = 0
+            new_val = max(0, current - int(qty))
+            ws.update_cell(i, stock_idx + 1, new_val)
+            return
+
+def decrement_stock_in_memory(df, sku, qty):
+    try:
+        mask = df["sku"].str.strip().str.lower() == str(sku).strip().lower()
+        if mask.any():
+            idx = df[mask].index[0]
+            current = int(df.at[idx, "stock"])
+            df.at[idx, "stock"] = max(0, current - int(qty))
+    except Exception:
+        return
 
 def detect_product_change(text: str, df, last_rank_list):
     t = (text or "").lower()
@@ -894,6 +954,8 @@ if user_text:
                     if order and order.get("row_index"):
                         order["record"]["status"] = "confirmed"
                         update_order_row(order["row_index"], order["record"])
+                        decrement_stock_by_sku(order["record"].get("sku", ""), order["record"].get("qty", 0))
+                        decrement_stock_in_memory(df, order["record"].get("sku", ""), order["record"].get("qty", 0))
                     st.session_state.pending_order = None
                     st.markdown(resp)
                     st.session_state.chat.append({"role": "assistant", "content": resp})
@@ -948,8 +1010,34 @@ if user_text:
                 idx = rank_choice - 1
                 if 0 <= idx < len(st.session_state.last_rank_list):
                     chosen = st.session_state.last_rank_list[idx]
-                    resp = answer_from_row(chosen, intent)
-                    resp += "\n\n¿Querés cotizar **cantidad** o ver **alternativas**?"
+                    if qty:
+                        final_qty, stock = resolve_qty_with_stock(chosen, qty)
+                        if stock and final_qty < qty:
+                            resp = (
+                                f"Solo tengo **{stock}** unidades en stock. "
+                                f"Si te sirve, te armo la orden por **{final_qty}**.\n\n"
+                            )
+                        else:
+                            resp = ""
+                        resp += build_order_summary(chosen, final_qty)
+                        record = build_order_record(
+                            chosen,
+                            final_qty,
+                            "pending",
+                            st.session_state.conversation_id,
+                            st.session_state.customer_name
+                        )
+                        row_index = append_order(record)
+                        st.session_state.pending_order = {
+                            "row": chosen,
+                            "qty": final_qty,
+                            "options": st.session_state.last_rank_list[:] if st.session_state.last_rank_list else None,
+                            "row_index": row_index,
+                            "record": record
+                        }
+                    else:
+                        resp = answer_from_row(chosen, intent)
+                        resp += "\n\n¿Querés cotizar **cantidad** o ver **alternativas**?"
                     st.session_state.last_product = chosen
                 else:
                     resp = "No llego a ese número en la lista anterior. ¿Querés que te muestre el ranking de nuevo?"
