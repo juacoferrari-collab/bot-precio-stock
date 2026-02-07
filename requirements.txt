@@ -1,0 +1,7 @@
+streamlit
+pandas
+openpyxl
+openai
+rapidfuzz
+gspread
+google-auth
